@@ -138,6 +138,87 @@ export function getDispatcher(cfg: AppConfig): Dispatcher | undefined {
 export function _resetDispatcherCacheForTests(): void {
   cachedDispatcher = undefined;
 }
-export async function generateImage(_opts: GenerateOpts, _cfg: AppConfig): Promise<Buffer> {
-  throw new Error('not implemented');
+export interface GenerateOptions {
+  retry?: boolean;
+}
+
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const DEFAULT_MODEL = 'google/gemini-3.1-flash-image-preview';
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+export async function generateImage(
+  opts: GenerateOpts,
+  cfg: AppConfig,
+  options: GenerateOptions = {},
+): Promise<Buffer> {
+  const retry = options.retry !== false;
+
+  let refData: { mime: string; b64: string } | undefined;
+  if (opts.ref) {
+    const refObj = opts.ref as { path?: string; mime?: string; b64?: string };
+    if (refObj.mime && refObj.b64) {
+      refData = { mime: refObj.mime, b64: refObj.b64 };
+    } else if (refObj.path) {
+      const { readAsBase64 } = await import('./image.js');
+      refData = await readAsBase64(refObj.path);
+    }
+  }
+
+  const payload = buildPayload({
+    prompt: opts.prompt,
+    model: opts.model ?? DEFAULT_MODEL,
+    ref: refData,
+  });
+
+  const dispatcher = getDispatcher(cfg);
+
+  let lastErr: Error | undefined;
+  for (let attempt = 0; attempt < (retry ? 3 : 1); attempt++) {
+    try {
+      const res = await fetch(OPENROUTER_URL, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${cfg.apiKey}`,
+        },
+        body: JSON.stringify(payload),
+        // @ts-expect-error undici Dispatcher option not in lib.dom fetch types
+        dispatcher,
+      });
+
+      if (!res.ok) {
+        const body = await res.text();
+        const err = classifyError(res.status, body, res.headers);
+        if (
+          retry &&
+          (err instanceof NetworkError ||
+            (err instanceof RateLimitError && (err as RateLimitError).retryAfterSec !== undefined))
+        ) {
+          const waitMs = err instanceof RateLimitError && err.retryAfterSec
+            ? err.retryAfterSec * 1000
+            : 1000 * Math.pow(2, attempt);
+          await sleep(waitMs);
+          lastErr = err;
+          continue;
+        }
+        throw err;
+      }
+
+      const json = await res.json();
+      return parseResponse(json);
+    } catch (e) {
+      if (e instanceof Error && 'exitCode' in e) {
+        throw e;
+      }
+      if (!retry || attempt === 2) {
+        throw new NetworkError(e instanceof Error ? e.message : String(e));
+      }
+      lastErr = new NetworkError(e instanceof Error ? e.message : String(e));
+      await sleep(1000 * Math.pow(2, attempt));
+    }
+  }
+  throw lastErr ?? new NetworkError('Exhausted retries');
 }

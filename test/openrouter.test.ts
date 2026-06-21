@@ -1,10 +1,11 @@
-import { describe, test, expect, afterEach } from 'vitest';
+import { describe, test, expect, afterEach, vi } from 'vitest';
 import {
   buildPayload,
   parseResponse,
   classifyError,
   getDispatcher,
   _resetDispatcherCacheForTests,
+  generateImage,
 } from '../src/openrouter.js';
 import { makePng } from './helpers/makePng.js';
 import sharp from 'sharp';
@@ -145,5 +146,136 @@ describe('getDispatcher', () => {
   test('accepts socks5 URLs', () => {
     const d = getDispatcher(cfg({ proxyUrl: 'socks5://127.0.0.1:1080' }));
     expect(d).toBeDefined();
+  });
+});
+
+const PNG_B64 = (async () => {
+  const buf = await sharp({ create: { width: 2, height: 2, channels: 4, background: { r: 1, g: 2, b: 3, alpha: 1 } } })
+    .png().toBuffer();
+  return buf.toString('base64');
+})();
+
+function makeOkResponse(b64: string): Response {
+  return new Response(JSON.stringify({
+    choices: [{ message: { images: [{ type: 'image_url', image_url: { url: `data:image/png;base64,${b64}` } }] } }],
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+}
+
+function makeStatusResponse(status: number, body: object, headers: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
+}
+
+describe('generateImage', () => {
+  test('posts to OpenRouter and returns image buffer', async () => {
+    const b64 = await PNG_B64;
+    const fetchMock = vi.fn().mockResolvedValueOnce(makeOkResponse(b64));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const buf = await generateImage({ prompt: 'a cat' }, { apiKey: 'sk-x', proxyUrl: undefined });
+      expect(buf[0]).toBe(0x89);
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toContain('openrouter.ai');
+      expect(init.method).toBe('POST');
+      const body = JSON.parse(init.body);
+      expect(body.model).toBe('google/gemini-3.1-flash-image-preview');
+      expect(body.messages[0].content[0].text).toBe('a cat');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test('retries on 429 with backoff (uses Retry-After)', async () => {
+    const b64 = await PNG_B64;
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(makeStatusResponse(429, { error: { message: 'slow' } }, { 'retry-after': '1' }))
+      .mockResolvedValueOnce(makeOkResponse(b64));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const buf = await generateImage({ prompt: 'x' }, { apiKey: 'sk-x', proxyUrl: undefined });
+      expect(buf[0]).toBe(0x89);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test('retries on 500 up to 3 times then throws', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeStatusResponse(500, { error: { message: 'oops' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await expect(generateImage({ prompt: 'x' }, { apiKey: 'sk-x', proxyUrl: undefined }))
+        .rejects.toBeInstanceOf(NetworkError);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test('does NOT retry on AuthError', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeStatusResponse(401, { error: { message: 'bad key' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await expect(generateImage({ prompt: 'x' }, { apiKey: 'sk-x', proxyUrl: undefined }))
+        .rejects.toBeInstanceOf(AuthError);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test('does NOT retry on ContentPolicyError', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeStatusResponse(400, { error: { message: 'content blocked by safety' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await expect(generateImage({ prompt: 'x' }, { apiKey: 'sk-x', proxyUrl: undefined }))
+        .rejects.toBeInstanceOf(ContentPolicyError);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test('--no-retry (retry:false) disables retry', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeStatusResponse(500, { error: { message: 'oops' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await expect(generateImage({ prompt: 'x' }, { apiKey: 'sk-x', proxyUrl: undefined }, { retry: false }))
+        .rejects.toBeInstanceOf(NetworkError);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test('includes reference image when ref is provided', async () => {
+    const b64 = await PNG_B64;
+    const fetchMock = vi.fn().mockResolvedValueOnce(makeOkResponse(b64));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await generateImage(
+        { prompt: 'blue', ref: { mime: 'image/png', b64 } },
+        { apiKey: 'sk-x', proxyUrl: undefined },
+      );
+      const [, init] = fetchMock.mock.calls[0];
+      const body = JSON.parse(init.body);
+      expect(body.messages[0].content).toHaveLength(2);
+      expect(body.messages[0].content[1].type).toBe('image_url');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test('attaches proxy dispatcher when configured', async () => {
+    const b64 = await PNG_B64;
+    const fetchMock = vi.fn().mockResolvedValueOnce(makeOkResponse(b64));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await generateImage({ prompt: 'x' }, { apiKey: 'sk-x', proxyUrl: 'http://127.0.0.1:7890' });
+      const [, init] = fetchMock.mock.calls[0];
+      expect(init.dispatcher).toBeDefined();
+    } finally {
+      vi.unstubAllGlobals();
+      _resetDispatcherCacheForTests();
+    }
   });
 });
