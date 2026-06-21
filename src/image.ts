@@ -1,4 +1,5 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import sharp from 'sharp';
 import { FileIOError } from './types.js';
 
@@ -35,4 +36,28 @@ function sniffMime(buf: Buffer): string | undefined {
     if (check(buf)) return mime;
   }
   return undefined;
+}
+
+export async function saveFromBase64(b64: string, outPath: string): Promise<void> {
+  let buf: Buffer;
+  try {
+    buf = Buffer.from(b64, 'base64');
+  } catch (e) {
+    throw new FileIOError(`Invalid base64 input: ${e instanceof Error ? e.message : e}`);
+  }
+
+  try {
+    await sharp(buf).metadata();
+  } catch (e) {
+    throw new FileIOError(
+      `Decoded bytes are not a valid image: ${e instanceof Error ? e.message : e}`,
+    );
+  }
+
+  try {
+    await mkdir(dirname(outPath), { recursive: true });
+    await sharp(buf).toFile(outPath);
+  } catch (e) {
+    throw new FileIOError(`Cannot write ${outPath}: ${e instanceof Error ? e.message : e}`);
+  }
 }
