@@ -174,7 +174,15 @@ or-image batch \
 ]
 ```
 
-`mask` is a single-channel PNG; white = editable region.
+`mask` is a single-channel grayscale PNG; white pixels = editable region.
+The implementation calls `sharp(maskPath).grayscale().raw()` to extract the
+mask regardless of whether the source PNG is RGB or already grayscale.
+
+`--size` applies only to `t2i`; `i2i` and `edit` inherit dimensions from
+`--ref`.
+
+API key resolution priority (highest to lowest): `--api-key` flag >
+`OPENROUTER_API_KEY` env var > `.env` file at cwd.
 
 ## Error Handling
 
