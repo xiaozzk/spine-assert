@@ -50,3 +50,49 @@ describe('getConfig — api key', () => {
     expect(thrown!.message).toContain('OPENROUTER_API_KEY');
   });
 });
+
+describe('getConfig — proxy', () => {
+  const ORIGINAL_ENV = process.env;
+  beforeEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+    process.env.OPENROUTER_API_KEY = 'sk-or-v1-test'; // satisfy api key check
+    delete process.env.HTTPS_PROXY;
+    delete process.env.https_proxy;
+    delete process.env.HTTP_PROXY;
+    delete process.env.http_proxy;
+  });
+  afterEach(() => {
+    process.env = ORIGINAL_ENV;
+  });
+
+  test('--proxy flag wins', () => {
+    process.env.HTTPS_PROXY = 'http://env:1';
+    const cfg = getConfig({ proxy: 'http://flag:2' });
+    expect(cfg.proxyUrl).toBe('http://flag:2');
+  });
+
+  test('reads HTTPS_PROXY (uppercase) when no flag', () => {
+    process.env.HTTPS_PROXY = 'http://upper:7890';
+    expect(getConfig({}).proxyUrl).toBe('http://upper:7890');
+  });
+
+  test('reads https_proxy (lowercase) when no flag and no uppercase', () => {
+    process.env.https_proxy = 'http://lower:7890';
+    expect(getConfig({}).proxyUrl).toBe('http://lower:7890');
+  });
+
+  test('HTTPS_PROXY wins over https_proxy', () => {
+    process.env.HTTPS_PROXY = 'http://upper:1';
+    process.env.https_proxy = 'http://lower:2';
+    expect(getConfig({}).proxyUrl).toBe('http://upper:1');
+  });
+
+  test('falls back to HTTP_PROXY when no HTTPS_* set', () => {
+    process.env.HTTP_PROXY = 'http://http:7890';
+    expect(getConfig({}).proxyUrl).toBe('http://http:7890');
+  });
+
+  test('returns undefined proxyUrl when none configured', () => {
+    expect(getConfig({}).proxyUrl).toBeUndefined();
+  });
+});
