@@ -63,7 +63,7 @@ export function parseResponse(json: unknown): Buffer {
   if (!images || images.length === 0) {
     throw new ParseError('Response has no image data');
   }
-  const url = images[0].image_url?.url;
+  const url = images[0]?.image_url?.url;
   if (!url || !url.startsWith('data:')) {
     throw new ParseError('Image URL is not a data URL');
   }
