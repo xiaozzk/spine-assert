@@ -30,6 +30,7 @@ processing. No multi-turn conversation.
 | Image I/O | `sharp` | Format conversion + base64 helpers |
 | Env loading | `dotenv` | Reads `.env` automatically |
 | Concurrency | `p-limit` | Bounded concurrency for batch |
+| HTTP proxy | `undici.ProxyAgent` | Already in Node 22; passed to `fetch` via `dispatcher` |
 | Testing | `vitest` | Fast, native TS/ESM |
 | Build | `tsc` → `dist/` | Simple, no bundler needed |
 | Distribution | `bin/or-image` shebang → `dist/cli.js` | Runs after `npm i -g` |
@@ -67,15 +68,31 @@ global flags (`--model`, `--api-key`, `--dry-run`, `--verbose`,
 `--no-retry`). Validates inputs, calls into other modules, formats
 console output, sets process exit code.
 
-**`src/config.ts`** — resolves API key in this order:
+**`src/config.ts`** — resolves configuration in this priority order:
+
+API key:
 1. `argv.apiKey` (`--api-key`)
 2. `process.env.OPENROUTER_API_KEY`
 3. `.env` file at cwd (loaded by `dotenv`)
-Returns `string` or throws `UsageError("OPENROUTER_API_KEY not set")`.
+
+Proxy URL:
+1. `argv.proxy` (`--proxy`)
+2. `process.env.HTTPS_PROXY`
+3. `process.env.https_proxy`
+4. `process.env.HTTP_PROXY`
+5. `process.env.http_proxy`
+6. `.env` file keys `HTTPS_PROXY` / `HTTP_PROXY` (loaded by `dotenv`)
+
+`getConfig()` returns `{ apiKey: string, proxyUrl?: string }` or throws
+`UsageError("OPENROUTER_API_KEY not set")`. The proxy value is opaque
+to the rest of the app — `openrouter.ts` decides how to apply it.
 
 **`src/openrouter.ts`** — exports:
 - `generateImage(opts: GenerateOpts): Promise<Buffer>`
 - internal `buildPayload(opts)`, `parseResponse(json)`, `classifyError(status, body)`
+- internal `getDispatcher()` — returns a `undici.ProxyAgent` if a proxy is
+  configured, else `undefined`. The agent is passed to every `fetch` call
+  via the `dispatcher` option.
 
 Payload shape sent to OpenRouter (`/api/v1/chat/completions`):
 
@@ -149,6 +166,7 @@ or-image batch \
 # Global flags (apply to every subcommand)
 --model google/gemini-3.1-flash-image-preview   # default
 --api-key sk-xxx                                 # override env (not recommended)
+--proxy http://127.0.0.1:7890                    # override env (default port for local proxy tools)
 --dry-run                                        # print payload, don't send
 --verbose                                        # full request/response
 --no-retry                                       # disable auto-retry
@@ -183,6 +201,67 @@ mask regardless of whether the source PNG is RGB or already grayscale.
 
 API key resolution priority (highest to lowest): `--api-key` flag >
 `OPENROUTER_API_KEY` env var > `.env` file at cwd.
+
+## Proxy Support
+
+The CLI routes all HTTP traffic through a proxy when one is configured.
+This is needed because OpenRouter access is blocked from many regions
+without a proxy.
+
+**Resolution order** (highest priority first):
+1. `--proxy <url>` flag
+2. `HTTPS_PROXY` env var
+3. `https_proxy` env var
+4. `HTTP_PROXY` env var
+5. `http_proxy` env var
+6. `HTTPS_PROXY` / `HTTP_PROXY` in `.env`
+
+**Implementation:**
+
+`openrouter.ts` exports `getDispatcher(): ProxyAgent | undefined`.
+If a proxy URL is configured, it returns a cached
+`new undici.ProxyAgent({ uri: proxyUrl, requestTls: { rejectUnauthorized: true } })`.
+Every `fetch` call passes `dispatcher` to route through it.
+
+If the proxy URL is malformed, `getDispatcher()` throws `UsageError` at
+startup with the offending value masked (`http://***@host:port`) — fail
+fast, not on the first request.
+
+**Defaults / no proxy:** when nothing is configured, `getDispatcher()`
+returns `undefined` and `fetch` uses the system network stack directly.
+No overhead, no code branching per request.
+
+**Proxy URL examples:**
+
+```
+http://127.0.0.1:7890              # local Clash / V2RayN / sing-box
+socks5://127.0.0.1:1080            # SOCKS5 also supported via undici
+http://user:pass@proxy.example:8080  # auth in URL
+```
+
+**Diagnostic output:** when `--verbose` is set, after a successful
+request the CLI prints `via proxy: <scheme>://<host>:<port>` (with
+credentials stripped). When no proxy is set, prints `direct`.
+
+**Test cases (added to `openrouter.test.ts`):**
+
+- `getDispatcher() returns ProxyAgent when HTTPS_PROXY is set`
+- `getDispatcher() returns undefined when no proxy configured`
+- `getDispatcher() throws UsageError on malformed URL`
+- `fetch calls receive dispatcher when proxy is configured`
+  (verified by inspecting the request options in a mock)
+
+**`.env.example` (committed):**
+
+```
+# Required
+OPENROUTER_API_KEY=sk-or-v1-...
+
+# Optional: HTTP proxy (uncomment if needed)
+# HTTPS_PROXY=http://127.0.0.1:7890
+```
+
+The user-level `.env` (gitignored) holds the real key.
 
 ## Error Handling
 
@@ -221,10 +300,12 @@ class FileIOError extends OrImageError { exitCode = 7 }
 ### Single call (`t2i`)
 
 1. `bin/or-image` → `cli.ts` parses argv into `GenerateOpts`.
-2. `config.ts` resolves API key (env or `.env`).
-3. `openrouter.generateImage(opts)` builds payload, POSTs, parses response.
+2. `config.ts` resolves API key + proxy URL (env or `.env`).
+3. `openrouter.generateImage(opts)` builds payload, POSTs (via proxy if
+   configured), parses response.
 4. `image.saveFromBase64(b64, outPath)` writes file.
-5. `cli.ts` prints `[OK] ./cat.png · 1.2MB · 4.2s` and exits 0.
+5. `cli.ts` prints `[OK] ./cat.png · 1.2MB · 4.2s` (and `via proxy: ...`
+   when `--verbose`) and exits 0.
 
 ### Batch
 
@@ -318,3 +399,13 @@ Scripts in `package.json`:
 ## Open Questions for User
 
 None — all design questions resolved during brainstorming.
+
+### Notes from Round 2 (2026-06-22)
+
+- Added full proxy support (HTTP/HTTPS/SOCKS5 via `undici.ProxyAgent`).
+  Default convention: `--proxy http://127.0.0.1:7890` matches the user's
+  local proxy port.
+- User will provide `OPENROUTER_API_KEY` via `.env` (gitignored). The
+  design supports both env var and `.env`, so the user can pick either.
+- Key handling reminder: never log the full API key. `getConfig()` and
+  error messages show only the last 6 chars (e.g. `sk-...28e2`).
