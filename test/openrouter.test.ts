@@ -1,7 +1,8 @@
 import { describe, test, expect } from 'vitest';
-import { buildPayload, parseResponse } from '../src/openrouter.js';
+import { buildPayload, parseResponse, classifyError } from '../src/openrouter.js';
 import { makePng } from './helpers/makePng.js';
 import sharp from 'sharp';
+import { AuthError, ContentPolicyError, RateLimitError, NetworkError } from '../src/types.js';
 
 describe('buildPayload', () => {
   test('text-only payload', () => {
@@ -79,5 +80,33 @@ describe('parseResponse', () => {
       choices: [{ message: { images: [{ type: 'image_url', image_url: { url: 'not-a-data-url' } }] } }],
     };
     expect(() => parseResponse(json)).toThrow(/data url/i);
+  });
+});
+
+describe('classifyError', () => {
+  const h = (entries: Record<string, string>) => new Headers(entries);
+
+  test('401 → AuthError', () => {
+    expect(classifyError(401, 'unauthorized', h({}))).toBeInstanceOf(AuthError);
+  });
+  test('403 → AuthError', () => {
+    expect(classifyError(403, 'forbidden', h({}))).toBeInstanceOf(AuthError);
+  });
+  test('400 with safety block → ContentPolicyError', () => {
+    const body = JSON.stringify({ error: { message: 'content blocked by safety filter' } });
+    expect(classifyError(400, body, h({}))).toBeInstanceOf(ContentPolicyError);
+  });
+  test('400 generic → message preserved', () => {
+    const body = JSON.stringify({ error: { message: 'bad request' } });
+    const err = classifyError(400, body, h({}));
+    expect(err.message).toContain('bad request');
+  });
+  test('429 with Retry-After → RateLimitError carrying retryAfterSec', () => {
+    const err = classifyError(429, 'slow', h({ 'retry-after': '7' }));
+    expect(err).toBeInstanceOf(RateLimitError);
+    expect((err as RateLimitError).retryAfterSec).toBe(7);
+  });
+  test('500 → NetworkError', () => {
+    expect(classifyError(500, 'oops', h({}))).toBeInstanceOf(NetworkError);
   });
 });

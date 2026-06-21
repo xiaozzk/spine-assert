@@ -79,7 +79,29 @@ export function parseResponse(json: unknown): Buffer {
   }
 }
 export function classifyError(status: number, bodyText: string, headers: Headers): Error {
-  throw new Error('not implemented');
+  let parsedMessage: string | undefined;
+  try {
+    const obj = JSON.parse(bodyText) as { error?: { message?: string } };
+    parsedMessage = obj.error?.message;
+  } catch {
+    parsedMessage = bodyText.slice(0, 200);
+  }
+
+  if (status === 401 || status === 403) {
+    return new AuthError(parsedMessage ?? 'Authentication failed');
+  }
+  if (status === 429) {
+    const retryAfterRaw = headers.get('retry-after');
+    const retryAfterSec = retryAfterRaw ? Number(retryAfterRaw) : undefined;
+    return new RateLimitError(parsedMessage ?? 'Rate limited', retryAfterSec);
+  }
+  if (status === 400 && /safety|policy|blocked/i.test(parsedMessage ?? '')) {
+    return new ContentPolicyError(parsedMessage ?? 'Content blocked');
+  }
+  if (status >= 500 || status === 408) {
+    return new NetworkError(parsedMessage ?? `Server error ${status}`);
+  }
+  return new ParseError(`Unexpected response ${status}: ${parsedMessage ?? '(no body)'}`);
 }
 export function getDispatcher(_cfg: AppConfig): Dispatcher | undefined {
   return undefined;
