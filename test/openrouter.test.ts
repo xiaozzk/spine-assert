@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest';
-import { buildPayload } from '../src/openrouter.js';
+import { buildPayload, parseResponse } from '../src/openrouter.js';
 import { makePng } from './helpers/makePng.js';
+import sharp from 'sharp';
 
 describe('buildPayload', () => {
   test('text-only payload', () => {
@@ -39,5 +40,44 @@ describe('buildPayload', () => {
     const json = JSON.stringify(payload);
     expect(json).not.toContain('strength');
     expect(json).not.toContain('size');
+  });
+});
+
+const SAMPLE_BASE64_PNG = (async () => {
+  const buf = await sharp({ create: { width: 2, height: 2, channels: 4, background: { r: 1, g: 2, b: 3, alpha: 1 } } })
+    .png().toBuffer();
+  return buf.toString('base64');
+})();
+
+describe('parseResponse', () => {
+  test('extracts image buffer from choices[0].message.images[0]', async () => {
+    const b64 = await SAMPLE_BASE64_PNG;
+    const json = {
+      choices: [{
+        message: {
+          images: [{ type: 'image_url', image_url: { url: `data:image/png;base64,${b64}` } }],
+        },
+      }],
+    };
+    const buf = parseResponse(json);
+    expect(buf[0]).toBe(0x89);
+    expect(buf.length).toBeGreaterThan(0);
+  });
+
+  test('throws ParseError when no images array', () => {
+    const json = { choices: [{ message: { content: 'no image' } }] };
+    expect(() => parseResponse(json)).toThrow(/no image/i);
+  });
+
+  test('throws ParseError when images array is empty', () => {
+    const json = { choices: [{ message: { images: [] } }] };
+    expect(() => parseResponse(json)).toThrow(/empty|no image/i);
+  });
+
+  test('throws ParseError on bad data URL', () => {
+    const json = {
+      choices: [{ message: { images: [{ type: 'image_url', image_url: { url: 'not-a-data-url' } }] } }],
+    };
+    expect(() => parseResponse(json)).toThrow(/data url/i);
   });
 });

@@ -47,8 +47,36 @@ export function buildPayload(input: PayloadInput): ApiPayload {
 }
 
 // Stubs for tasks 11..14 — filled in below.
+interface RawResponse {
+  choices?: Array<{
+    message?: {
+      content?: string;
+      images?: Array<{ type: string; image_url?: { url?: string } }>;
+    };
+  }>;
+}
+
 export function parseResponse(json: unknown): Buffer {
-  throw new Error('not implemented');
+  const r = json as RawResponse;
+  const choice = r.choices?.[0];
+  const images = choice?.message?.images;
+  if (!images || images.length === 0) {
+    throw new ParseError('Response has no image data');
+  }
+  const url = images[0].image_url?.url;
+  if (!url || !url.startsWith('data:')) {
+    throw new ParseError('Image URL is not a data URL');
+  }
+  const commaIdx = url.indexOf(',');
+  if (commaIdx === -1) {
+    throw new ParseError('Malformed data URL');
+  }
+  const b64 = url.slice(commaIdx + 1);
+  try {
+    return Buffer.from(b64, 'base64');
+  } catch (e) {
+    throw new ParseError(`Cannot decode base64: ${e instanceof Error ? e.message : e}`);
+  }
 }
 export function classifyError(status: number, bodyText: string, headers: Headers): Error {
   throw new Error('not implemented');
