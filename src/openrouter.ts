@@ -1,4 +1,4 @@
-import { ProxyAgent, type Dispatcher } from 'undici';
+import { Agent, ProxyAgent, type Dispatcher } from 'undici';
 import { getConfig, type AppConfig } from './config.js';
 import {
   AuthError,
@@ -103,8 +103,40 @@ export function classifyError(status: number, bodyText: string, headers: Headers
   }
   return new ParseError(`Unexpected response ${status}: ${parsedMessage ?? '(no body)'}`);
 }
-export function getDispatcher(_cfg: AppConfig): Dispatcher | undefined {
-  return undefined;
+let cachedDispatcher: Dispatcher | undefined | 'invalid';
+
+export function getDispatcher(cfg: AppConfig): Dispatcher | undefined {
+  if (cachedDispatcher !== undefined && cachedDispatcher !== 'invalid') {
+    if (cfg.proxyUrl) return cachedDispatcher;
+    return undefined;
+  }
+  if (!cfg.proxyUrl) {
+    cachedDispatcher = undefined;
+    return undefined;
+  }
+  try {
+    new URL(cfg.proxyUrl);
+    const isSocks = /^socks[45]?:/i.test(cfg.proxyUrl);
+    let agent: Dispatcher;
+    if (isSocks) {
+      // undici's Agent supports socks proxy via connect.proxy at runtime,
+      // but the public types do not declare it. Cast to keep both happy.
+      const opts = { connect: { proxy: cfg.proxyUrl } } as unknown as ConstructorParameters<typeof Agent>[0];
+      agent = new Agent(opts) as unknown as Dispatcher;
+    } else {
+      agent = new ProxyAgent({ uri: cfg.proxyUrl }) as unknown as Dispatcher;
+    }
+    cachedDispatcher = agent;
+    return cachedDispatcher;
+  } catch (e) {
+    cachedDispatcher = 'invalid';
+    const masked = cfg.proxyUrl.replace(/\/\/[^@/]+@/, '//***@');
+    throw new UsageError(`Invalid proxy URL "${masked}": ${e instanceof Error ? e.message : e}`);
+  }
+}
+
+export function _resetDispatcherCacheForTests(): void {
+  cachedDispatcher = undefined;
 }
 export async function generateImage(_opts: GenerateOpts, _cfg: AppConfig): Promise<Buffer> {
   throw new Error('not implemented');

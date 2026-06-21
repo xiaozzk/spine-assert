@@ -1,8 +1,25 @@
-import { describe, test, expect } from 'vitest';
-import { buildPayload, parseResponse, classifyError } from '../src/openrouter.js';
+import { describe, test, expect, afterEach } from 'vitest';
+import {
+  buildPayload,
+  parseResponse,
+  classifyError,
+  getDispatcher,
+  _resetDispatcherCacheForTests,
+} from '../src/openrouter.js';
 import { makePng } from './helpers/makePng.js';
 import sharp from 'sharp';
 import { AuthError, ContentPolicyError, RateLimitError, NetworkError } from '../src/types.js';
+import type { AppConfig } from '../src/config.js';
+
+const cfg = (overrides: Partial<AppConfig> = {}): AppConfig => ({
+  apiKey: 'sk-or-v1-x',
+  proxyUrl: undefined,
+  ...overrides,
+});
+
+afterEach(() => {
+  _resetDispatcherCacheForTests();
+});
 
 describe('buildPayload', () => {
   test('text-only payload', () => {
@@ -108,5 +125,25 @@ describe('classifyError', () => {
   });
   test('500 → NetworkError', () => {
     expect(classifyError(500, 'oops', h({}))).toBeInstanceOf(NetworkError);
+  });
+});
+
+describe('getDispatcher', () => {
+  test('returns undefined when no proxy configured', () => {
+    expect(getDispatcher(cfg())).toBeUndefined();
+  });
+
+  test('returns a ProxyAgent when proxyUrl is set', () => {
+    const d = getDispatcher(cfg({ proxyUrl: 'http://127.0.0.1:7890' }));
+    expect(d).toBeDefined();
+  });
+
+  test('throws UsageError on malformed URL', () => {
+    expect(() => getDispatcher(cfg({ proxyUrl: 'not a url' }))).toThrow(/proxy/i);
+  });
+
+  test('accepts socks5 URLs', () => {
+    const d = getDispatcher(cfg({ proxyUrl: 'socks5://127.0.0.1:1080' }));
+    expect(d).toBeDefined();
   });
 });
