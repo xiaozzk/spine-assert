@@ -1,0 +1,33 @@
+{
+  "name": "or-image",
+  "version": "0.1.0",
+  "description": "OpenRouter × Gemini image generation CLI",
+  "type": "module",
+  "bin": {
+    "or-image": "bin/or-image"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run --exclude '**/e2e.test.ts'",
+    "test:watch": "vitest --exclude '**/e2e.test.ts'",
+    "test:e2e": "OR_E2E=1 vitest run e2e.test.ts",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "p-limit": "^5.0.0",
+    "sharp": "^0.33.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}
