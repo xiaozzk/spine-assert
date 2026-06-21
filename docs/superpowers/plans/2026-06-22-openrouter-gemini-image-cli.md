@@ -2319,15 +2319,27 @@ npm run build
 
 ## Configure
 
-Copy `.env.example` to `.env` and fill in:
+**Primary: system-level environment variables** (Windows: `setx
+OPENROUTER_API_KEY "sk-or-v1-..."` in CMD, or PowerShell
+`[Environment]::SetEnvironmentVariable("OPENROUTER_API_KEY", "sk-or-v1-...",
+"User")`). OpenRouter credentials must live in the system shell env, not
+in the project tree.
+
+```powershell
+[Environment]::SetEnvironmentVariable("OPENROUTER_API_KEY", "sk-or-v1-...", "User")
+[Environment]::SetEnvironmentVariable("HTTPS_PROXY",        "http://127.0.0.1:7890", "User")
+```
+
+**Fallback: `.env`** (gitignored). dotenv only populates `process.env` if
+the var is unset, so system env always wins.
 
 ```
 OPENROUTER_API_KEY=sk-or-v1-...
-HTTPS_PROXY=http://127.0.0.1:7890   # optional
+HTTPS_PROXY=http://127.0.0.1:7890
 ```
 
-Or export `OPENROUTER_API_KEY` in your shell. CLI flag `--api-key`
-overrides everything but is not recommended (shell history).
+CLI flag `--api-key` overrides everything but is not recommended
+(shell history).
 
 ## Usage
 

@@ -405,7 +405,17 @@ None — all design questions resolved during brainstorming.
 - Added full proxy support (HTTP/HTTPS/SOCKS5 via `undici.ProxyAgent`).
   Default convention: `--proxy http://127.0.0.1:7890` matches the user's
   local proxy port.
-- User will provide `OPENROUTER_API_KEY` via `.env` (gitignored). The
-  design supports both env var and `.env`, so the user can pick either.
+- **`OPENROUTER_API_KEY` must be configured as a system-level environment
+  variable** (Windows: `setx OPENROUTER_API_KEY "sk-..."` or PowerShell
+  `[Environment]::SetEnvironmentVariable("OPENROUTER_API_KEY", "sk-...",
+  "User")`). The CLI reads from `process.env`, which is populated by the
+  system shell, not from project files.
+- The `.env` file is a **fallback only**. `dotenv/config` does NOT
+  override an existing `process.env.OPENROUTER_API_KEY`, so a system-level
+  set value always wins. If the system env var is unset, dotenv will
+  populate it from `.env` — useful for CI, containers, or quick local
+  testing, but not the user's primary mechanism.
+- Proxy (`HTTPS_PROXY`) follows the same fallback chain and is the
+  preferred way to configure the proxy on this system.
 - Key handling reminder: never log the full API key. `getConfig()` and
   error messages show only the last 6 chars (e.g. `sk-...28e2`).
