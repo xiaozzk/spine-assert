@@ -67,3 +67,24 @@ export function defaultOutPath(index?: number): string {
   const suffix = index !== undefined ? `-${index}` : '';
   return `output/or-image-${ts}${suffix}.png`;
 }
+
+export interface GrayscaleMask {
+  width: number;
+  height: number;
+  data: Uint8Array;
+}
+
+export async function maskToGrayscale(path: string): Promise<GrayscaleMask> {
+  let buf: Buffer;
+  try {
+    buf = await readFile(path);
+  } catch (e) {
+    throw new FileIOError(`Cannot read mask ${path}: ${e instanceof Error ? e.message : e}`);
+  }
+  try {
+    const { data, info } = await sharp(buf).grayscale().raw().toBuffer({ resolveWithObject: true });
+    return { width: info.width, height: info.height, data: new Uint8Array(data) };
+  } catch (e) {
+    throw new FileIOError(`Cannot decode mask ${path}: ${e instanceof Error ? e.message : e}`);
+  }
+}

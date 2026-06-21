@@ -76,3 +76,22 @@ describe('defaultOutPath', () => {
     expect(b).toContain('-2.');
   });
 });
+
+import { maskToGrayscale } from '../src/image.js';
+
+describe('maskToGrayscale', () => {
+  test('converts an RGB PNG mask to grayscale pixels', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'or-image-'));
+    const file = join(dir, 'mask.png');
+    const sharpMod = (await import('sharp')).default;
+    const maskPng = await sharpMod({ create: { width: 4, height: 4, channels: 3, background: { r: 255, g: 255, b: 255 } } })
+      .png()
+      .toBuffer();
+    await writeFile(file, maskPng);
+    const pixels = await maskToGrayscale(file);
+    expect(pixels.width).toBe(4);
+    expect(pixels.height).toBe(4);
+    expect(pixels.data.length).toBe(4 * 4);
+    expect(pixels.data[0]).toBe(255);
+  });
+});
