@@ -2,7 +2,7 @@ import { describe, test, expect } from 'vitest';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readAsBase64, saveFromBase64 } from '../src/image.js';
+import { readAsBase64, saveFromBase64, defaultOutPath } from '../src/image.js';
 import { makePng } from './helpers/makePng.js';
 import { readFile } from 'node:fs/promises';
 
@@ -58,5 +58,21 @@ describe('saveFromBase64', () => {
     const dir = await mkdtemp(join(tmpdir(), 'or-image-'));
     const out = join(dir, 'bad.png');
     await expect(saveFromBase64('not base64 $$$', out)).rejects.toThrow();
+  });
+});
+
+describe('defaultOutPath', () => {
+  test('produces a path under ./output/ ending in .png', () => {
+    const p = defaultOutPath();
+    expect(p.startsWith('output/or-image-')).toBe(true);
+    expect(p.endsWith('.png')).toBe(true);
+  });
+
+  test('different calls produce different timestamps (or include index)', async () => {
+    const a = defaultOutPath(1);
+    const b = defaultOutPath(2);
+    expect(a).not.toBe(b);
+    expect(a).toContain('-1.');
+    expect(b).toContain('-2.');
   });
 });

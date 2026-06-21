@@ -61,3 +61,9 @@ export async function saveFromBase64(b64: string, outPath: string): Promise<void
     throw new FileIOError(`Cannot write ${outPath}: ${e instanceof Error ? e.message : e}`);
   }
 }
+
+export function defaultOutPath(index?: number): string {
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const suffix = index !== undefined ? `-${index}` : '';
+  return `output/or-image-${ts}${suffix}.png`;
+}
