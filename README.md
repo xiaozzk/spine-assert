@@ -56,6 +56,13 @@ Mask is a single-channel PNG; white = editable region.
 node bin/or-image edit --prompt "replace with a fox" --ref cat.png --mask mask.png --out cat-fox.png
 ```
 
+> **Note (v0.1.0):** `--mask` accepts a grayscale mask path and validates it,
+> but the mask image is not currently sent as a separate content part in the
+> OpenRouter payload. The `edit` subcommand is effectively equivalent to
+> `i2i` with a strong prompt about replacing the white region. True
+> server-side inpainting (mask image sent alongside reference) is planned
+> for a future version.
+
 ### Batch
 
 `prompts.json`:
