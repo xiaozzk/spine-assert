@@ -12,27 +12,30 @@ npm run build
 
 ## Configure
 
-**Primary: system-level environment variables** (Windows: `setx
-OPENROUTER_API_KEY "sk-or-v1-..."` in CMD, or PowerShell
-`[Environment]::SetEnvironmentVariable("OPENROUTER_API_KEY", "sk-or-v1-...",
-"User")`). OpenRouter credentials must live in the system shell env, not
-in the project tree.
+**`OPENROUTER_API_KEY` is configured as a system-level environment variable**,
+not in any project file. Set it once per machine:
 
 ```powershell
-[Environment]::SetEnvironmentVariable("OPENROUTER_API_KEY", "sk-or-v1-...", "User")
-[Environment]::SetEnvironmentVariable("HTTPS_PROXY",        "http://127.0.0.1:7890", "User")
+# PowerShell (permanent, user-level)
+[Environment]::SetEnvironmentVariable("OPENROUTER_API_KEY", "在此粘贴你的 key", "User")
 ```
 
-**Fallback: `.env`** (gitignored). dotenv only populates `process.env` if
-the var is unset, so system env always wins.
-
-```
-OPENROUTER_API_KEY=sk-or-v1-...
-HTTPS_PROXY=http://127.0.0.1:7890
+```cmd
+:: CMD (permanent, requires new terminal)
+setx OPENROUTER_API_KEY "在此粘贴你的 key"
 ```
 
-CLI flag `--api-key` overrides everything but is not recommended
-(shell history).
+After setting, **open a new terminal** so the env propagates.
+
+**`HTTPS_PROXY`** (optional) can also be set as a system env var, or kept in
+the gitignored `.env` file if you prefer project-local config:
+
+```powershell
+[Environment]::SetEnvironmentVariable("HTTPS_PROXY", "http://127.0.0.1:7890", "User")
+```
+
+CLI flag `--api-key` overrides everything but is not recommended (shell
+history).
 
 ## Usage
 
