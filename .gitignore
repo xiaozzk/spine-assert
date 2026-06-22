@@ -30,3 +30,4 @@ coverage/
 
 # runtime output (generated images)
 /output/
+/test-output/
