@@ -1,16 +1,16 @@
-# Spine Workspace
+# Spine 工作区
 
-This workspace (`D:\spine`) is dedicated to **Spine** — the 2D skeletal animation runtime and tooling.
+本工作区（`D:\spine`）专用于 **Spine** —— 二维骨骼动画运行时与工具链。
 
-## Language
+## 语言
 
-Default working language: **中文 (Chinese)**. 文档、注释、与 Claude 的对话均优先使用中文；技术名词、文件名、API、标识符保留英文原文。
+默认工作语言：**中文 (Chinese)**。文档、注释、与 Claude 的对话均优先使用中文；技术名词、文件名、API、标识符保留英文原文。
 
-## Contents
+## 目录结构
 
-- `reference/` — Spine reference materials
-  - `spine-runtimes-4.3/` — official Spine runtimes (4.3)
-  - `skeleton-swap-template/` — skeleton swap template assets
-- `.claude/` — Claude Code project configuration and memory
-- `.git/` — version control
-
+- `reference/` — Spine 参考资料
+  - `spine-runtimes-4.3/` — 官方 Spine 运行时（4.3）
+  - `skeleton-swap-template/` — 骨骼替换模板素材
+- `.claude/` — Claude Code 项目配置与记忆
+- `.git/` — 版本控制
+- `tmp/` — **临时目录**：所有 deep research（深度研究）、全网搜索（web search / Tavily / 各类爬取）产生的临时文件、笔记、下载产物均放在此目录下。该目录**不纳入版本控制**，可随时清理。
