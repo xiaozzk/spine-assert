@@ -15,7 +15,7 @@ $RECYCLE.BIN/
 .classpath
 .settings/
 
-# --- Python (assert/ has __pycache__ + webp_to_png.py) ---------------------
+# --- Python (assets/_archive/scripts/ holds legacy helpers) -----------------
 __pycache__/
 *.py[cod]
 *$py.class
